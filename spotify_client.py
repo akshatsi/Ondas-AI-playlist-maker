@@ -1,0 +1,121 @@
+"""
+spotify_client.py — Service B: Spotify metadata enrichment (mocked).
+
+Responsible for:
+  1. Taking each CandidateTrack from the LLM pool.
+  2. "Searching" Spotify for the track to confirm it exists.
+  3. Returning a VerifiedTrack with `duration_ms` and `spotify_id` attached.
+
+The mock implementation generates realistic, deterministic durations
+seeded from the track title + artist so the same track always gets the
+same duration across runs (important for reproducible solver results).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import logging
+import spotipy
+from spotipy.oauth2 import SpotifyClientCredentials
+
+from schemas import CandidateTrack, VerifiedTrack
+
+logger = logging.getLogger(__name__)
+
+# Duration bounds for the mock (in milliseconds).
+_MIN_DURATION_MS = 180_000  # 3:00
+_MAX_DURATION_MS = 270_000  # 4:30
+_DURATION_RANGE = _MAX_DURATION_MS - _MIN_DURATION_MS  # 90 000 ms
+
+
+def _deterministic_duration(title: str, artist: str) -> int:
+    """
+    Produce a repeatable duration in [180 000, 270 000] ms.
+
+    We hash the (title, artist) pair so the same track always maps to
+    the same mock duration — eliminating randomness from solver tests.
+    """
+    key = f"{title.lower().strip()}::{artist.lower().strip()}"
+    digest = int(hashlib.md5(key.encode()).hexdigest(), 16)
+    return _MIN_DURATION_MS + (digest % (_DURATION_RANGE + 1))
+
+
+def _deterministic_spotify_id(title: str, artist: str) -> str:
+    """Generate a Spotify-style 22-char Base62 ID from the track key."""
+    key = f"{title}::{artist}"
+    return hashlib.sha256(key.encode()).hexdigest()[:22]
+
+
+sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials())
+
+async def _spotify_lookup(track: CandidateTrack) -> VerifiedTrack | None:
+    query = f"track:{track.title} artist:{track.artist}"
+    results = sp.search(q=query, type="track", limit=1)
+    if not results:
+        return None
+    items = results["tracks"]["items"]
+    if not items:
+        return None
+    hit = items[0]
+    return VerifiedTrack(
+        title=track.title,
+        artist=track.artist,
+        phase=track.phase,
+        duration_ms=hit["duration_ms"],
+        spotify_id=hit["id"],
+    )
+
+async def verify_and_fetch_metadata(
+    tracks: list[CandidateTrack],
+) -> list[VerifiedTrack]:
+    """
+    Public interface for Service B.
+
+    Looks up every candidate track concurrently via Spotify (mocked).
+    Tracks that cannot be verified are silently dropped — the over-
+    generation factor ensures the solver still has enough material.
+
+    Parameters
+    ----------
+    tracks : list[CandidateTrack]
+        The raw candidate pool from the LLM.
+
+    Returns
+    -------
+    list[VerifiedTrack]
+        Tracks enriched with duration_ms and spotify_id.
+        Order is preserved relative to the input.
+    """
+    logger.info("Starting Spotify verification for %d candidate tracks", len(tracks))
+
+    # Fire all lookups concurrently — asyncio.gather preserves order.
+    results = await asyncio.gather(
+        *[_spotify_lookup(t) for t in tracks],
+        return_exceptions=True,
+    )
+
+    verified: list[VerifiedTrack] = []
+    failed = 0
+
+    for i, result in enumerate(results):
+        if isinstance(result, BaseException):
+            logger.error(
+                "Spotify lookup ERROR for '%s' by %s: %s",
+                tracks[i].title,
+                tracks[i].artist,
+                result,
+            )
+            failed += 1
+        elif result is None:
+            failed += 1
+        else:
+            verified.append(result)
+
+    logger.info(
+        "Spotify verification complete  |  verified=%d  |  dropped=%d",
+        len(verified),
+        failed,
+    )
+
+    return verified
