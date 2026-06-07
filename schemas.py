@@ -6,11 +6,8 @@ Defines the strict contract between every service in the orchestrator:
 """
 
 from __future__ import annotations
-
 from typing import Literal
-
 from pydantic import BaseModel, Field
-
 
 # ──────────────────────────────────────────────
 #  1. Inbound request from the client
@@ -105,4 +102,8 @@ class FinalPlaylistResponse(BaseModel):
     track_count: int = Field(
         ...,
         description="Number of tracks in the final playlist.",
+    )
+    spotify_playlist_url: str | None = Field(
+        default=None,
+        description="URL to the generated playlist on Spotify (if authenticated).",
     )

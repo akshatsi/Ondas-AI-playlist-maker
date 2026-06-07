@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sondas - AI Playlist Orchestrator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="background-mesh"></div>
+    
+    <main class="container">
+        <header class="glass-panel">
+            <h1>Sondas</h1>
+            <p class="subtitle">AI-Driven Narrative Playlist Engine</p>
+            
+            <div id="auth-section">
+                <!-- Injected via JS -->
+            </div>
+        </header>
+
+        <section id="generator-section" class="glass-panel hidden">
+            <form id="playlist-form">
+                <div class="form-group">
+                    <label for="prompt">Narrative Prompt</label>
+                    <textarea id="prompt" required placeholder="A 45-minute HYROX session starting with hip-hop warmup, peaking with darksynth, and cooling down with acoustic chill." minlength="10"></textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label for="duration">Target Duration (Minutes)</label>
+                    <input type="number" id="duration" required min="5" max="180" value="45">
+                </div>
+                
+                <button type="submit" id="generate-btn" class="primary-btn">
+                    <span class="btn-text">Generate & Export to Spotify</span>
+                    <div class="spinner hidden"></div>
+                </button>
+            </form>
+            
+            <div id="status-message" class="hidden"></div>
+        </section>
+
+        <section id="result-section" class="glass-panel hidden">
+            <h2>Playlist Exported!</h2>
+            <p id="result-concept" class="highlight-text"></p>
+            <div class="stats">
+                <div class="stat-box">
+                    <span class="label">Tracks</span>
+                    <span id="result-tracks" class="value"></span>
+                </div>
+                <div class="stat-box">
+                    <span class="label">Target Duration</span>
+                    <span id="result-target" class="value"></span>
+                </div>
+                <div class="stat-box">
+                    <span class="label">Actual Duration</span>
+                    <span id="result-actual" class="value"></span>
+                </div>
+            </div>
+            
+            <a id="spotify-link" href="#" target="_blank" class="spotify-btn">Open in Spotify</a>
+            <button id="reset-btn" class="secondary-btn">Create Another</button>
+        </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

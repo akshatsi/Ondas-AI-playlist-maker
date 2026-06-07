@@ -13,25 +13,25 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, HTTPException
-
+from fastapi import APIRouter, HTTPException, Request
+#local files 
 from llm_engine import generate_candidate_pool
 from schemas import FinalPlaylistResponse, PlaylistRequest
 from solver import DEFAULT_TOLERANCE_SECONDS, SolverError, solve_playlist_knapsack
-from spotify_client import verify_and_fetch_metadata
+from spotify_client import verify_and_fetch_metadata, export_to_spotify_account
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1/playlists", tags=["playlists"])
+router = APIRouter(tags=["Playlist"])
 
 
 @router.post(
-    "/generate",
+    "/api/v1/playlists/generate",
     response_model=FinalPlaylistResponse,
     summary="Generate an optimised playlist from a creative prompt",
     response_description="A mathematically time-matched playlist preserving the narrative arc.",
 )
-async def generate_playlist(request: PlaylistRequest) -> FinalPlaylistResponse:
+async def generate_playlist(payload: PlaylistRequest, request: Request) -> FinalPlaylistResponse:
     """
     Full orchestration pipeline:
 
@@ -47,8 +47,8 @@ async def generate_playlist(request: PlaylistRequest) -> FinalPlaylistResponse:
     # ── Stage 1: LLM candidate generation ────────────────────────────
     try:
         pool = await generate_candidate_pool(
-            prompt=request.prompt,
-            target_minutes=request.target_duration_minutes,
+            prompt=payload.prompt,
+            target_minutes=payload.target_duration_minutes,
         )
     except ValueError as exc:
         logger.error("LLM pipeline failure: %s", exc)
@@ -100,7 +100,7 @@ async def generate_playlist(request: PlaylistRequest) -> FinalPlaylistResponse:
     try:
         result = solve_playlist_knapsack(
             tracks=verified,
-            target_minutes=request.target_duration_minutes,
+            target_minutes=payload.target_duration_minutes,
         )
     except SolverError as exc:
         logger.error("Solver failure: %s", exc)
@@ -122,6 +122,21 @@ async def generate_playlist(request: PlaylistRequest) -> FinalPlaylistResponse:
         result.deviation_seconds,
     )
 
+    # ── Stage 4: Export to Spotify (if authenticated) ────────────────
+    spotify_url = None
+    token_info = request.session.get("token_info")
+    if token_info:
+        try:
+            logger.info("Exporting to Spotify account...")
+            spotify_url = await export_to_spotify_account(
+                token_info=token_info,
+                playlist_name=f"Sondas: {pool.playlist_concept.title()}",
+                tracks=result.selected_tracks
+            )
+        except Exception as exc:
+            logger.error("Failed to export to Spotify: %s", exc, exc_info=True)
+            # We don't fail the request, just return without the URL
+
     # ── Assemble response ────────────────────────────────────────────
     return FinalPlaylistResponse(
         concept=pool.playlist_concept,
@@ -130,4 +145,5 @@ async def generate_playlist(request: PlaylistRequest) -> FinalPlaylistResponse:
         tolerance_seconds=DEFAULT_TOLERANCE_SECONDS,
         tracks=result.selected_tracks,
         track_count=len(result.selected_tracks),
+        spotify_playlist_url=spotify_url,
     )
