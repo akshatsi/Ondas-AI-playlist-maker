@@ -22,10 +22,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
-from spotipy.oauth2 import SpotifyOAuth
 import spotipy
 
 from router import router as playlist_router
+from spotify_client import get_spotify_oauth
 
 
 #  Logging configuration
@@ -60,12 +60,7 @@ app.add_middleware(SessionMiddleware, secret_key=os.environ.get("SECRET_KEY", "s
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-def get_spotify_oauth():
-    return SpotifyOAuth(
-        scope="playlist-modify-public playlist-modify-private user-read-private",
-        redirect_uri=os.environ.get("SPOTIPY_REDIRECT_URI", "http://localhost:8000/callback"),
-        show_dialog=True
-    )
+
 
 # ──────────────────────────────────────────────
 #  Register routers
@@ -104,6 +99,11 @@ async def get_me(request: Request):
     token_info = request.session.get("token_info")
     if not token_info:
         raise HTTPException(status_code=401, detail="Not logged in")
+        
+    scope = token_info.get("scope", "")
+    if "playlist-modify-public" not in scope or "playlist-modify-private" not in scope:
+        request.session.clear()
+        raise HTTPException(status_code=401, detail="Scope missing, forcing re-login")
     
     sp_oauth = get_spotify_oauth()
     if sp_oauth.is_token_expired(token_info):

@@ -18,7 +18,7 @@ from fastapi import APIRouter, HTTPException, Request
 from llm_engine import generate_candidate_pool
 from schemas import FinalPlaylistResponse, PlaylistRequest
 from solver import DEFAULT_TOLERANCE_SECONDS, SolverError, solve_playlist_knapsack
-from spotify_client import verify_and_fetch_metadata, export_to_spotify_account
+from spotify_client import verify_and_fetch_metadata, export_to_spotify_account, get_spotify_oauth
 
 logger = logging.getLogger(__name__)
 
@@ -126,16 +126,36 @@ async def generate_playlist(payload: PlaylistRequest, request: Request) -> Final
     spotify_url = None
     token_info = request.session.get("token_info")
     if token_info:
-        try:
-            logger.info("Exporting to Spotify account...")
-            spotify_url = await export_to_spotify_account(
-                token_info=token_info,
-                playlist_name=f"Sondas: {pool.playlist_concept.title()}",
-                tracks=result.selected_tracks
+        # Strict scope validation to prevent stale tokens from causing 403 Forbidden
+        scope = token_info.get("scope", "")
+        if "playlist-modify-public" not in scope or "playlist-modify-private" not in scope:
+            logger.error(f"Stale token detected! Scopes found: {scope}")
+            raise HTTPException(
+                status_code=401, 
+                detail="Your Spotify token is stale and lacks playlist creation permissions. You MUST click 'Log out' and log back in to fix the 403 error!"
             )
-        except Exception as exc:
-            logger.error("Failed to export to Spotify: %s", exc, exc_info=True)
-            # We don't fail the request, just return without the URL
+            
+        sp_oauth = get_spotify_oauth()
+        if sp_oauth.is_token_expired(token_info):
+            try:
+                token_info = sp_oauth.refresh_access_token(token_info['refresh_token'])
+                request.session["token_info"] = token_info
+            except Exception as e:
+                logger.error("Failed to refresh Spotify token: %s", e)
+                request.session.pop("token_info", None)
+                token_info = None
+
+        if token_info:
+            try:
+                logger.info("Exporting to Spotify account...")
+                spotify_url = await export_to_spotify_account(
+                    token_info=token_info,
+                    playlist_name=f"Sondas: {pool.playlist_concept.title()}",
+                    tracks=result.selected_tracks
+                )
+            except Exception as exc:
+                logger.error("Failed to export to Spotify: %s", exc, exc_info=True)
+                # We don't fail the request, just return without the URL
 
     # ── Assemble response ────────────────────────────────────────────
     return FinalPlaylistResponse(

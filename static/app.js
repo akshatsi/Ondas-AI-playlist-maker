@@ -99,8 +99,36 @@ document.addEventListener('DOMContentLoaded', async () => {
                 
                 if (data.spotify_playlist_url) {
                     document.getElementById('spotify-link').href = data.spotify_playlist_url;
+                    document.getElementById('spotify-link').classList.remove('hidden');
                 } else {
                     document.getElementById('spotify-link').classList.add('hidden');
+                    // Add a warning message if Spotify blocked the creation
+                    const warning = document.createElement('p');
+                    warning.style.color = '#ff9800';
+                    warning.style.fontSize = '0.9rem';
+                    warning.style.marginTop = '16px';
+                    warning.textContent = "Spotify API blocked auto-export for your developer account. Your tracks are listed above!";
+                    document.getElementById('result-section').insertBefore(warning, document.getElementById('spotify-link'));
+                }
+                
+                // Render tracks
+                const trackContainer = document.getElementById('track-list-container');
+                trackContainer.innerHTML = '';
+                if (data.tracks && data.tracks.length > 0) {
+                    data.tracks.forEach(track => {
+                        const div = document.createElement('div');
+                        div.className = 'track-item';
+                        div.innerHTML = `
+                            <div class="track-info">
+                                <span class="track-title">${track.title}</span>
+                                <span class="track-artist">${track.artist}</span>
+                            </div>
+                            <span class="track-duration">${formatTime(track.duration_ms / 1000)}</span>
+                        `;
+                        trackContainer.appendChild(div);
+                    });
+                } else {
+                    trackContainer.innerHTML = '<p>No tracks returned.</p>';
                 }
             } else {
                 alert(`Error: ${data.detail || 'Failed to generate'}`);
